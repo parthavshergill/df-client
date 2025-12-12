@@ -63,9 +63,9 @@ for i,u in ipairs(df.global.world.units.active) do
     -- Physical state
     local wounds = #u.body.wounds
     local blood = math.floor(u.body.blood_count * 100 / math.max(1, u.body.blood_max))
-    local hunger = u.counters2.hunger_timer < 50000 and "hungry" or nil
-    local thirst = u.counters2.thirst_timer < 50000 and "thirsty" or nil
-    local tired = u.counters2.sleepiness_timer < 30000 and "tired" or nil
+    local hunger = u.counters2.hunger_timer < 75000 and "hungry" or nil
+    local thirst = u.counters2.thirst_timer < 75000 and "thirsty" or nil
+    local tired = u.counters2.sleepiness_timer < 50000 and "tired" or nil
 
     local phys = {}
     if wounds > 0 then table.insert(phys, wounds.." wounds") end
