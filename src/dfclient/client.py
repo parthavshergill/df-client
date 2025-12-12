@@ -19,6 +19,7 @@ from dfclient.models import (
 # Core protocol method IDs (built-in)
 CORE_BIND_METHOD = 0
 CORE_RUN_COMMAND = 1
+CORE_RUN_LUA = 2
 
 # Profession lookup table (from DF profession_type enum)
 PROFESSIONS: dict[int, str] = {
@@ -354,13 +355,18 @@ class DFClient:
         # Parse command into name and arguments
         # CoreRunCommandRequest: command (1) = string, arguments (2) = repeated string
         import shlex
-        try:
-            parts = shlex.split(command)
-        except ValueError:
-            parts = command.split()
 
-        cmd_name = parts[0] if parts else command
-        cmd_args = parts[1:] if len(parts) > 1 else []
+        # Special case: "lua" command - pass entire code as single argument
+        if command.startswith("lua "):
+            cmd_name = "lua"
+            cmd_args = [command[4:]]  # Everything after "lua "
+        else:
+            try:
+                parts = shlex.split(command)
+            except ValueError:
+                parts = command.split()
+            cmd_name = parts[0] if parts else command
+            cmd_args = parts[1:] if len(parts) > 1 else []
 
         # Encode: field 1 = command name, field 2 (repeated) = arguments
         request = _encode_string(1, cmd_name)
