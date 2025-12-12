@@ -1,33 +1,44 @@
 -- Job creation via Lua
 -- Run via: q.py run "lua <code>"
 
--- Create a job directly (bypasses manager)
-local j = dfhack.job.createLinked()
-j.job_type = df.job_type.FellTree  -- or other job type
-j.pos.x, j.pos.y, j.pos.z = 87, 79, 178
+-- =============================================================================
+-- WORKSHOP JOBS (recommended - this pattern works!)
+-- =============================================================================
+-- Use df.job:new() + linkIntoWorld() + assignToWorkshop()
+-- Use INTEGER job types (enum names like df.job_type.BrewDrink may not exist!)
 
--- Common job types:
--- 5=Dig, 6=CarveUpwardStaircase, 7=CarveDownwardStaircase
--- 10=DigChannel, 11=FellTree, 12=GatherPlants
--- 17=Eat, 19=Drink, 23=Sleep, 25=Fish, 26=Hunt
+-- Add job to workshop (e.g., brewing at still)
+local ws = df.building.find(3)  -- find workshop by ID
+local job = df.job:new()
+job.job_type = 113  -- ProcessPlantsBarrel = brewing
+dfhack.job.linkIntoWorld(job)
+dfhack.job.assignToWorkshop(job, ws)
+print("Added brewing job to workshop", ws.id)
 
--- Find a tree and create FellTree job
-for i,p in ipairs(df.global.world.plants.all) do
-  if p.tree_info and p.pos.z == 178 then
-    local j = dfhack.job.createLinked()
-    j.job_type = df.job_type.FellTree
-    j.pos.x, j.pos.y, j.pos.z = p.pos.x, p.pos.y, p.pos.z
-    print("Created FellTree at "..p.pos.x..","..p.pos.y)
-    break
+-- Common workshop job types (use integers!):
+-- 113 = ProcessPlantsBarrel (brewing)
+-- 125 = MakeBarrel
+-- 126 = MakeBucket
+-- 82  = MakeCrafts
+-- 184 = MakeCharcoal
+
+-- =============================================================================
+-- STANDALONE JOBS (less tested - may need additional setup)
+-- =============================================================================
+-- Jobs like FellTree, Dig, etc. may need item refs set up properly
+
+-- List pending jobs
+for _,j in ipairs(df.global.world.jobs.list) do
+  if j then
+    print(df.job_type[j.job_type].." at "..j.pos.x..","..j.pos.y..","..j.pos.z)
   end
 end
 
--- List pending jobs
-local utils = require('utils')
-for _,j in utils.listpairs(df.global.world.jobs.list) do
-  print(df.job_type[j.job_type].." at "..j.pos.x..","..j.pos.y..","..j.pos.z)
-end
-
--- Manager work orders (use DFHack command)
+-- =============================================================================
+-- MANAGER WORK ORDERS - REQUIRES MANAGER NOBLE!
+-- =============================================================================
+-- WARNING: These commands only work if you have a manager assigned!
+-- For early game, use direct job creation above instead.
+--
 -- q.py run "workorder BrewDrink 10"
 -- q.py run "workorder MakeCharcoal"
