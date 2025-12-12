@@ -46,73 +46,117 @@ class DFDaemon:
             print(f"Failed to connect to DFHack: {e}")
             return False
 
-    def get_snapshot(self) -> dict[str, Any]:
-        """Get full game state via Lua queries."""
-        if not self.client:
-            return {"error": "Not connected to DFHack"}
+    def _get_state(self) -> dict[str, Any]:
+        """Get comprehensive dwarf-focused game state via Lua."""
+        lua = '''
+local year = df.global.cur_year
+local season = ({"spring","summer","autumn","winter"})[math.floor(df.global.cur_year_tick/100800)+1] or "?"
+print("YEAR:"..year.."/"..season)
 
-        try:
-            # Single Lua script that outputs all data as key=value pairs
-            lua_code = '''
-local out = {}
--- Basic info
-out.year = df.global.cur_year
-out.paused = df.global.pause_state and 1 or 0
-out.camera_x = df.global.window_x
-out.camera_y = df.global.window_y
-out.camera_z = df.global.window_z
-
--- Count citizens
-local citizens = 0
-local idle = 0
+-- Dwarves with comprehensive status
 for i,u in ipairs(df.global.world.units.active) do
   if dfhack.units.isCitizen(u) and dfhack.units.isAlive(u) then
-    citizens = citizens + 1
-    if not u.job.current_job then idle = idle + 1 end
+    local name = dfhack.units.getReadableName(u)
+    local job = u.job.current_job and df.job_type[u.job.current_job.job_type] or "idle"
+    local stress = dfhack.units.getStressCategory(u)
+
+    -- Physical state
+    local wounds = #u.body.wounds
+    local blood = math.floor(u.body.blood_count * 100 / math.max(1, u.body.blood_max))
+    local hunger = u.counters2.hunger_timer < 50000 and "hungry" or nil
+    local thirst = u.counters2.thirst_timer < 50000 and "thirsty" or nil
+    local tired = u.counters2.sleepiness_timer < 30000 and "tired" or nil
+
+    local phys = {}
+    if wounds > 0 then table.insert(phys, wounds.." wounds") end
+    if blood < 80 then table.insert(phys, blood.."%% blood") end
+    if hunger then table.insert(phys, hunger) end
+    if thirst then table.insert(phys, thirst) end
+    if tired then table.insert(phys, tired) end
+    local physStr = #phys > 0 and table.concat(phys, ",") or "healthy"
+
+    -- Top unmet need
+    local topNeed = nil
+    local worstFocus = 0
+    local soul = u.status.current_soul
+    if soul then
+      for j=0,#soul.personality.needs-1 do
+        local n = soul.personality.needs[j]
+        if n.focus_level < worstFocus then
+          worstFocus = n.focus_level
+          topNeed = df.need_type[n.id]
+        end
+      end
+    end
+
+    -- Recent emotion
+    local emotion = nil
+    if soul and #soul.personality.emotions > 0 then
+      local em = soul.personality.emotions[#soul.personality.emotions-1]
+      emotion = df.emotion_type[em.type]
+    end
+
+    -- Top skill
+    local topSkill = nil
+    local topLevel = 0
+    if soul then
+      for j=0,#soul.skills-1 do
+        local sk = soul.skills[j]
+        if sk.rating > topLevel then
+          topLevel = sk.rating
+          topSkill = df.job_skill[sk.id]
+        end
+      end
+    end
+
+    local parts = {name, job, "stress:"..stress, physStr}
+    if topNeed then table.insert(parts, "needs:"..topNeed) end
+    if emotion then table.insert(parts, "feeling:"..emotion) end
+    if topSkill then table.insert(parts, "best:"..topSkill.."("..topLevel..")") end
+
+    print("DWARF:"..table.concat(parts, "|"))
   end
 end
-out.citizens = citizens
-out.idle = idle
 
--- Count threats
-local threats = 0
+-- Threats
+local threats = {}
 for i,u in ipairs(df.global.world.units.active) do
   if dfhack.units.isAlive(u) and (u.flags1.marauder or u.flags1.active_invader) then
-    threats = threats + 1
+    local race = df.global.world.raws.creatures.all[u.race].creature_id
+    table.insert(threats, race.."@"..u.pos.x..","..u.pos.y..","..u.pos.z)
   end
 end
-out.threats = threats
+if #threats > 0 then print("THREATS:"..table.concat(threats, ";")) end
 
--- Output as parseable lines
-for k,v in pairs(out) do print(k.."="..tostring(v)) end
+-- Recent announcements
+local ann = df.global.world.status.announcements
+local anns = {}
+for i=#ann-1,math.max(0,#ann-3),-1 do table.insert(anns, ann[i].text) end
+if #anns > 0 then print("RECENT:"..table.concat(anns, ";")) end
 '''
-            result = self.client.run_command(f"lua {lua_code}", timeout=2.0)
+        result = self.client.run_command(f"lua {lua}", timeout=3.0)
 
-            # Parse key=value output
-            data = {}
-            for line in result:
-                if "=" in line:
-                    key, val = line.split("=", 1)
-                    # Convert to int if possible
-                    try:
-                        data[key] = int(val)
-                    except ValueError:
-                        data[key] = val
+        data = {"year": "", "dwarves": [], "threats": [], "recent": []}
+        for line in result:
+            if line.startswith("YEAR:"):
+                data["year"] = line[5:]
+            elif line.startswith("DWARF:"):
+                data["dwarves"].append(line[6:])
+            elif line.startswith("THREATS:"):
+                raw = line[8:]
+                if raw:
+                    data["threats"] = raw.split(";")
+            elif line.startswith("RECENT:"):
+                raw = line[7:]
+                if raw:
+                    data["recent"] = raw.split(";")
 
-            return {
-                "year": data.get("year", 0),
-                "citizens": data.get("citizens", 0),
-                "idle": data.get("idle", 0),
-                "paused": data.get("paused", 0) == 1,
-                "camera": {
-                    "x": data.get("camera_x", 0),
-                    "y": data.get("camera_y", 0),
-                    "z": data.get("camera_z", 0),
-                },
-                "threats": data.get("threats", 0),
-            }
-        except Exception as e:
-            return {"error": str(e)}
+        hint = "Use Lua to dig, build, assign labors, or investigate further."
+        if data["threats"]:
+            hint = "THREATS ACTIVE. Use exterminate or military. " + hint
+
+        data["hint"] = hint
+        return data
 
     def cmd_pause(self) -> dict[str, Any]:
         """Pause the game."""
@@ -135,41 +179,17 @@ for k,v in pairs(out) do print(k.."="..tostring(v)) end
             return {"error": str(e)}
 
     def cmd_play(self, seconds: int) -> dict[str, Any]:
-        """Run game for N seconds and return changes."""
+        """Run game for N seconds, return state after."""
         if not self.client:
             return {"error": "Not connected"}
 
         try:
-            before = self.get_snapshot()
-            if "error" in before:
-                return before
-
             self.client.unpause()
             time.sleep(seconds)
             self.client.pause()
-
-            after = self.get_snapshot()
-            if "error" in after:
-                return after
-
-            # Compute changes
-            changes = []
-            if after["citizens"] < before["citizens"]:
-                changes.append(f"LOST {before['citizens'] - after['citizens']} citizen(s)!")
-            elif after["citizens"] > before["citizens"]:
-                changes.append(f"Gained {after['citizens'] - before['citizens']} citizen(s)")
-
-            if after["threats"] < before["threats"]:
-                changes.append(f"Killed {before['threats'] - after['threats']} threat(s)")
-            elif after["threats"] > before["threats"]:
-                changes.append(f"New threats: +{after['threats'] - before['threats']}")
-
-            return {
-                "seconds": seconds,
-                "before": before,
-                "after": after,
-                "changes": changes if changes else ["No significant changes"],
-            }
+            state = self._get_state()
+            state["seconds"] = seconds
+            return state
         except Exception as e:
             return {"error": str(e)}
 
@@ -189,7 +209,7 @@ for k,v in pairs(out) do print(k.."="..tostring(v)) end
         cmd = request.get("cmd", "")
 
         if cmd == "snapshot":
-            data = self.get_snapshot()
+            data = self._get_state()
         elif cmd == "pause":
             data = self.cmd_pause()
         elif cmd == "unpause":
