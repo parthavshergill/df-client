@@ -340,7 +340,7 @@ class DFClient:
         Run a DFHack console command.
 
         Args:
-            command: The command to run (e.g., "ls", "help")
+            command: The command to run (e.g., "ls", "kill-unit 123")
             timeout: Optional timeout override (some commands don't return results)
 
         Returns:
@@ -351,9 +351,21 @@ class DFClient:
         def collect_output(text: str) -> None:
             output_lines.extend(text.splitlines())
 
-        # Encode the command request
-        # CoreRunCommandRequest: command (1) = string
-        request = _encode_string(1, command)
+        # Parse command into name and arguments
+        # CoreRunCommandRequest: command (1) = string, arguments (2) = repeated string
+        import shlex
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            parts = command.split()
+
+        cmd_name = parts[0] if parts else command
+        cmd_args = parts[1:] if len(parts) > 1 else []
+
+        # Encode: field 1 = command name, field 2 (repeated) = arguments
+        request = _encode_string(1, cmd_name)
+        for arg in cmd_args:
+            request += _encode_string(2, arg)
 
         # Some commands (like clean, prospect) don't return a RESULT
         # Use shorter timeout and accept timeout as success for those
