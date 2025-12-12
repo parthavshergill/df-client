@@ -29,6 +29,13 @@ local bx, by = x % 16, y % 16
 block.designation[bx][by].dig = 1  -- 1=mine, 5=stair_down, 3=channel
 ```
 
+### Change Existing Tile (when dig doesn't work)
+Dig designations only work on WALLS, not existing floors. To change a floor:
+```lua
+local block = dfhack.maps.getTileBlock(x, y, z)
+block.tiletype[x%16][y%16] = df.tiletype.ConstructedStairU  -- or StairD, StairUD
+```
+
 ### Build Workshop
 ```lua
 local bld = dfhack.buildings.constructBuilding{

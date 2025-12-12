@@ -44,3 +44,26 @@ print(df.tiletype[dfhack.maps.getTileType(x, y, z)])
 -- Check if tile is hidden
 local hidden = block.designation[bx][by].hidden
 print("Hidden:", hidden)
+
+-- =============================================================================
+-- CHANGING EXISTING TILES (when dig designation doesn't work)
+-- =============================================================================
+-- Dig designations only work on WALLS, not existing floors!
+-- To change an existing floor to stairs, modify the tiletype directly:
+
+local x, y, z = 95, 95, 176
+local block = dfhack.maps.getTileBlock(x, y, z)
+local bx, by = x % 16, y % 16
+
+-- Change floor to up-stair
+block.tiletype[bx][by] = df.tiletype.ConstructedStairU
+
+-- Change floor to down-stair
+block.tiletype[bx][by] = df.tiletype.ConstructedStairD
+
+-- Change floor to up/down-stair
+block.tiletype[bx][by] = df.tiletype.ConstructedStairUD
+
+-- Verify the change
+local tt = dfhack.maps.getTileType(x, y, z)
+print("New shape:", df.tiletype.attrs[tt].shape)
