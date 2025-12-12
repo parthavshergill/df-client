@@ -126,6 +126,19 @@ Full list: `df.unit_labor` enum
 - **Protocol**: Protobuf RPC with length-prefixed messages
 - **Handshake**: Send `DFHack?\n` + version(4 bytes LE)
 
+### Troubleshooting: Port 5000 Conflict (macOS)
+
+macOS AirPlay Receiver uses port 5000 by default. If DFHack can't connect:
+
+1. **Option A:** Disable AirPlay Receiver
+   - System Settings → General → AirDrop & Handoff → Turn off "AirPlay Receiver"
+
+2. **Option B:** Use alternate port in DFHack console:
+   ```
+   remote-server start 5050
+   ```
+   Then update client to use port 5050.
+
 ## Key Global Tables
 
 | Table | Contents |
@@ -135,6 +148,13 @@ Full list: `df.unit_labor` enum
 | `df.global.world.items.all` | All items |
 | `df.global.world.jobs.list` | Active jobs |
 | `df.global.window_x/y/z` | Camera position |
+
+### Move Camera
+```lua
+df.global.window_x = 95
+df.global.window_y = 95
+df.global.window_z = 176
+```
 
 ## Useful DFHack Commands
 
