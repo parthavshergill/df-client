@@ -2,62 +2,47 @@
 
 You are playing Dwarf Fortress as narrator/DM. Designate work for dwarves; they act autonomously.
 
+## Orchestration Loop
+
+1. **Snapshot** — `q.py snapshot` to see state
+2. **Analyze** — What do dwarves need? What work should be done?
+3. **Designate** — Dig, build, add jobs, enable labors
+4. **Tick** — `q.py tick N` to let dwarves act
+5. **Repeat**
+
 ## Commands
 
 ```bash
 uv run python scripts/q.py daemon              # Start first
-uv run python scripts/q.py snapshot [radius]   # Camera-centered view (default 100)
-uv run python scripts/q.py tick N              # Advance N game ticks
-
-# Designations (dwarves will complete these)
-uv run python scripts/q.py dig x1 y1 z x2 y2 [type]      # mine, stair_down, channel, etc.
-uv run python scripts/q.py build <type> x y z             # carpenter, still, mason, etc.
-uv run python scripts/q.py stockpile x y z w h <preset>   # all, food, stone, etc.
-uv run python scripts/q.py labor <name> <labor> on|off    # MINE, PLANT, BREWER, etc.
-
-# Cheats
-uv run python scripts/q.py dig-now             # Instant dig
-uv run python scripts/q.py run "full-heal -all"
-uv run python scripts/q.py run "lua ..."       # Raw Lua for anything else
+uv run python scripts/q.py snapshot [radius]   # Camera-centered view
+uv run python scripts/q.py tick N              # Advance N ticks
+uv run python scripts/q.py dig x1 y1 z x2 y2 [type]   # Designate dig
+uv run python scripts/q.py build <type> x y z         # Build workshop
+uv run python scripts/q.py run "lua ..."              # Raw Lua
 ```
-
-## Adding Jobs to Workshops (Primary Method)
-
-Work orders (`order` command) require a **manager noble** - skip them. Add jobs directly:
-
-```lua
--- Find workshop (0=Carpenter, 15=Still, 2=Mason, etc.)
-local ws; for i,b in ipairs(df.global.world.buildings.all) do
-  if b:getSubtype() == 0 and df.building_workshopst:is_instance(b) then ws = b; break end
-end
-
--- Create and assign job (125=MakeBarrel, 113=ProcessPlantsBarrel/brew)
-local job = df.job:new()
-job.job_type = 125
-dfhack.job.linkIntoWorld(job)
-dfhack.job.assignToWorkshop(job, ws)
-```
-
-Key job types: MakeBarrel=125, ProcessPlantsBarrel=113 (brewing), MakeBed=?, ConstructTable=?
-See `API.md` for full list.
 
 ## Key Concept
 
-**You cannot directly control dwarves.** You designate work; they decide what to do based on labors enabled, tools available, and personal needs.
+**You cannot directly control dwarves.** You designate work; they decide what to do based on labors, tools, and needs.
 
-## Time
+## Triggering Game Engine (Critical!)
 
-- `tick 100-500` at a time (dwarves can starve during long advances)
-- ~1200 ticks = 1 day, ~100,800 ticks = 1 season
-- Enable timestream: `run "enable timestream"` then `run "timestream set fps 100"`
+Direct data modification does NOT trigger game logic. After setting designations:
+```lua
+dfhack.job.checkDesignationsNow()  -- Creates jobs from designations, assigns workers
+dfhack.job.checkBuildingsNow()     -- Creates jobs for buildings
+dfhack.job.addWorker(job, unit)    -- Manually assign worker to job
+```
 
-## Lua Patterns
+## Dwarf Needs
 
-- `actions/` — Verified working patterns
-- `experiments/` — Testing new patterns (promote to actions/ when verified)
+Dwarves don't auto-eat/drink in this setup. Use these workarounds:
+- `run "full-heal -all"` — Reset all hunger/thirst/sleep to 0
+- Or assign Eat jobs manually (see `experiments/11-orchestration.lua`)
 
 ## References
 
-- `JOURNAL.md` — Session log (current state)
+- `API.md` — Lua patterns, job types, building types
+- `experiments/` — Tested patterns (see README for status)
 - `GUIDE.md` — Gameplay strategies
-- `API.md` — Technical reference
+- `JOURNAL.md` — Session log
