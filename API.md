@@ -1,168 +1,155 @@
 # Technical Reference
 
-Low-level API details for extending the df-client.
+Low-level API for interacting with Dwarf Fortress via DFHack.
 
-## Architecture
+## Critical: Game Engine Integration
 
-```
-q.py (CLI) → TCP:5001 → DFDaemon → TCP:5000 → DFHack RemoteFortressReader
-                                 ↘ Lua commands via run_command()
-```
+**Direct data modification bypasses game logic and may be reset.** Use these functions to properly trigger the game engine:
 
-## Raw Lua Access
-
-For operations not covered by high-level commands:
-
-```bash
-uv run python scripts/q.py run "lua <code>"
-uv run python scripts/q.py run "<dfhack_command>"
-```
-
-## Lua Patterns
-
-See `actions/` directory for examples. Key patterns:
-
-### Dig Designation
 ```lua
+-- After setting designations (dig, chop, etc.)
+dfhack.job.checkDesignationsNow()   -- Creates jobs AND assigns workers
+
+-- After creating building construction jobs
+dfhack.job.checkBuildingsNow()      -- Creates jobs for buildings
+
+-- To manually assign a worker to a job
+dfhack.job.addWorker(job, unit)     -- Forces unit to work on job
+```
+
+## Proper Patterns
+
+### Designate Digging (dwarves complete)
+```lua
+local x, y, z = 95, 93, 175
 local block = dfhack.maps.getTileBlock(x, y, z)
 local bx, by = x % 16, y % 16
-block.designation[bx][by].dig = 1  -- 1=mine, 5=stair_down, 3=channel
+block.designation[bx][by].dig = 1  -- 1=mine, 2=UD-stair, 3=channel, 5=D-stair
+block.flags.designated = true
+dfhack.job.checkDesignationsNow()  -- CRITICAL: triggers job creation
 ```
 
-### Change Existing Tile (when dig doesn't work)
-Dig designations only work on WALLS, not existing floors. To change a floor:
+### Add Workshop Job (proper method)
 ```lua
-local block = dfhack.maps.getTileBlock(x, y, z)
-block.tiletype[x%16][y%16] = df.tiletype.ConstructedStairU  -- or StairD, StairUD
+-- Find workshop
+local ws = df.building.find(4)  -- by ID
+
+-- Create job with item requirements
+local job = df.job:new()
+job.job_type = df.job_type.MakeBarrel  -- or use integer 125
+
+-- Add material filter (REQUIRED for most jobs)
+local jitem = df.job_item:new()
+jitem.item_type = df.item_type.WOOD
+jitem.quantity = 1
+jitem.vector_id = df.job_item_vector_id.WOOD
+job.job_items.elements:insert('#', jitem)
+
+dfhack.job.linkIntoWorld(job)
+dfhack.job.assignToWorkshop(job, ws)
+-- Dwarf with correct labor will pick it up automatically
 ```
 
-### Build Workshop
+### Build Workshop/Building (dwarves complete)
 ```lua
 local bld = dfhack.buildings.constructBuilding{
   type = df.building_type.Workshop,
-  subtype = 15,  -- Still
-  pos = {x=35, y=75, z=178},
+  subtype = df.workshop_type.Still,  -- or integer
+  pos = {x=96, y=88, z=178},
   width = 3, height = 3
 }
--- NOTE: completeBuild() doesn't fully complete workshops!
-dfhack.buildings.completeBuild(bld)  -- Creates job, dwarves must build
-bld.construction_stage = 3           -- OR: instant completion (cheat)
+-- Building is created with ConstructBuilding job
+-- Dwarves will gather materials and build
 ```
 
-### Find Building by ID
+### Complete Building Instantly (cheat)
 ```lua
-local ws = df.building.find(3)  -- robust lookup by building ID
+bld:setBuildStage(bld:getMaxBuildStage())
+dfhack.buildings.completeBuild(bld)
 ```
 
 ### Labor Assignment
 ```lua
-local u = df.global.world.units.active[0]
-u.status.labors[df.unit_labor.MINE] = true
-```
-
-### Iterate Citizens
-```lua
-for i,u in ipairs(df.global.world.units.active) do
-  if dfhack.units.isCitizen(u) and dfhack.units.isAlive(u) then
-    print(dfhack.units.getReadableName(u), u.pos.x, u.pos.y, u.pos.z)
-  end
+for _, u in ipairs(dfhack.units.getCitizens()) do
+  u.status.labors[df.unit_labor.MINE] = true
+  u.status.labors[df.unit_labor.PLANT] = true
 end
 ```
 
-## Workshop Subtypes
+## Job API Functions
 
-| ID | Type |
-|----|------|
-| 0 | Carpenters |
-| 2 | Masons |
-| 3 | Craftsdwarfs |
-| 10 | Butchers |
-| 15 | Still |
-| 19 | Kitchen |
+| Function | Purpose |
+|----------|---------|
+| `dfhack.job.linkIntoWorld(job)` | Add job to world job list |
+| `dfhack.job.assignToWorkshop(job, ws)` | Link job to workshop |
+| `dfhack.job.addWorker(job, unit)` | Assign worker to job |
+| `dfhack.job.removeJob(job)` | Cancel job |
+| `dfhack.job.getHolder(job)` | Get building holding job |
+| `dfhack.job.getWorker(job)` | Get unit performing job |
+| `dfhack.job.checkDesignationsNow()` | Create jobs from designations |
+| `dfhack.job.checkBuildingsNow()` | Create jobs for buildings |
+
+## Workshop Types (df.workshop_type)
+
+| ID | Type | Products |
+|----|------|----------|
+| 0 | Carpenters | Beds, barrels, bins, furniture |
+| 2 | Masons | Stone furniture, blocks |
+| 3 | Craftsdwarfs | Crafts, totems |
+| 10 | Butchers | Meat |
+| 15 | Still | Alcohol |
+| 19 | Kitchen | Meals |
 
 ## Job Types (df.job_type)
 
 | ID | Job |
 |----|-----|
-| 113 | ProcessPlantsBarrel (brewing) |
+| 69 | ConstructBed |
+| 70 | ConstructThrone (chair) |
+| 72 | ConstructTable |
+| 67 | ConstructDoor |
+| 113 | BrewDrink |
 | 125 | MakeBarrel |
 | 126 | MakeBucket |
-| 82 | MakeCrafts |
-| 96 | MakeWeapon |
-| 100 | MakeArmor |
-| 184 | MakeCharcoal |
-| 109 | MakeCheese |
-| 110 | ProcessPlants |
 
-### Direct Job Creation (skip work orders)
+## Dig Designation Values
 
-```lua
--- Find workshop by ID (robust)
-local ws = df.building.find(3)  -- workshop with id=3
+| Value | Result |
+|-------|--------|
+| 1 | Mine → Floor |
+| 2 | UD-Stair |
+| 3 | Channel |
+| 5 | D-Stair |
+| 6 | U-Stair |
 
--- Create job with integer type (enum names may not work!)
-local job = df.job:new()
-job.job_type = 125  -- MakeBarrel (use integers, not df.job_type.X)
-dfhack.job.linkIntoWorld(job)
-dfhack.job.assignToWorkshop(job, ws)
-```
+## Labor Types (df.unit_labor)
 
-## Labor Indices
+| Labor | Purpose |
+|-------|---------|
+| MINE | Mining (needs pick) |
+| PLANT | Farming |
+| BREWER | Brewing |
+| CARPENTER | Woodworking |
+| MASON | Stoneworking |
+| HAUL_FOOD | Moving food |
 
-| ID | Labor |
-|----|-------|
-| 0 | MINE |
-| 10 | CUTWOOD |
-| 11 | CARPENTER |
-| 15 | MASON |
-| 30 | BREWER |
-| 39 | PLANT |
+## Key Limitations
 
-Full list: `df.unit_labor` enum
+1. **Stair upgrades**: Can't upgrade existing stairs via CarveUpDownStaircase
+2. **Designations on floors**: Can't dig floors, only walls
+3. **Direct tiletype changes**: May be reset by game engine
+4. **Work orders**: Require manager noble (skip them, add jobs directly)
 
 ## DFHack Connection
 
-- **Host**: `127.0.0.1:5000` (TCP)
-- **Protocol**: Protobuf RPC with length-prefixed messages
-- **Handshake**: Send `DFHack?\n` + version(4 bytes LE)
+- **Host**: `127.0.0.1:5000` (TCP, auto-starts with game)
+- **Protocol**: Protobuf RPC
 
-### Troubleshooting: Port 5000 Conflict (macOS)
-
-macOS AirPlay Receiver uses port 5000 by default. If DFHack can't connect:
-
-1. **Option A:** Disable AirPlay Receiver
-   - System Settings → General → AirDrop & Handoff → Turn off "AirPlay Receiver"
-
-2. **Option B:** Use alternate port in DFHack console:
-   ```
-   remote-server start 5050
-   ```
-   Then update client to use port 5050.
-
-## Key Global Tables
+## Global Tables
 
 | Table | Contents |
 |-------|----------|
 | `df.global.world.units.active` | All units |
 | `df.global.world.buildings.all` | All buildings |
 | `df.global.world.items.all` | All items |
-| `df.global.world.jobs.list` | Active jobs |
-| `df.global.window_x/y/z` | Camera position |
-
-### Move Camera
-```lua
-df.global.window_x = 95
-df.global.window_y = 95
-df.global.window_z = 176
-```
-
-## Useful DFHack Commands
-
-```bash
-dig-now                              # Complete dig designations
-full-heal -all                       # Heal everyone
-exterminate RACE                     # Remove creatures
-stockpiles import library/all -s ID  # Configure stockpile
-workorder '{"job":"X","amount":N}'   # Create work order
-enable timestream                    # Speed up simulation
-```
+| `df.global.world.jobs.list` | Active jobs (linked list) |

@@ -1,69 +1,76 @@
--- Dig designations via Lua
+-- Dig designation patterns
 -- Run via: q.py run "lua <code>"
 
--- Dig types:
--- 0 = No, 1 = Default, 2 = UpDownStair, 3 = Channel, 4 = Ramp, 5 = DownStair, 6 = UpStair
+-- =============================================================================
+-- PROPER DIGGING (dwarves complete the work)
+-- =============================================================================
+-- Step 1: Set designation
+-- Step 2: Call checkDesignationsNow() to create jobs
+-- Step 3: Tick and dwarves will dig
 
--- Designate single tile for digging
-local x, y, z = 40, 78, 177
+local x, y, z = 95, 93, 175
 local block = dfhack.maps.getTileBlock(x, y, z)
 local bx, by = x % 16, y % 16
-block.designation[bx][by].dig = 1  -- 1 = normal dig
-print("Designated tile for digging")
 
--- Designate area for digging (e.g., 3x3)
-for dx = 0, 2 do
-  for dy = 0, 2 do
-    local x, y, z = 40 + dx, 78 + dy, 177
+-- Set designation (only works on WALL tiles, not floors!)
+block.designation[bx][by].dig = 1  -- 1=mine, 2=UD-stair, 3=channel, 5=D-stair
+block.flags.designated = true
+
+-- CRITICAL: Trigger game engine to create jobs
+dfhack.job.checkDesignationsNow()
+
+print("Designated and triggered job creation")
+
+-- =============================================================================
+-- DESIGNATE AREA
+-- =============================================================================
+local x1, y1, z = 90, 90, 175
+local x2, y2 = 95, 95
+
+for x = x1, x2 do
+  for y = y1, y2 do
     local block = dfhack.maps.getTileBlock(x, y, z)
     local bx, by = x % 16, y % 16
     block.designation[bx][by].dig = 1
+    block.flags.designated = true
   end
 end
-print("Designated 3x3 area for digging")
+dfhack.job.checkDesignationsNow()  -- Create all jobs at once
 
--- Designate down stair
-block.designation[bx][by].dig = 5
+-- =============================================================================
+-- DIG DESIGNATION VALUES
+-- =============================================================================
+-- 0 = Clear designation
+-- 1 = Mine (wall → floor)
+-- 2 = UD-Stair (wall → StairUD)
+-- 3 = Channel (floor → hole + ramp below)
+-- 5 = D-Stair (wall → StairD)
+-- 6 = U-Stair (existing floor → StairU)
 
--- Designate up stair
-block.designation[bx][by].dig = 6
+-- =============================================================================
+-- MANUALLY ASSIGN WORKER TO DIG JOB
+-- =============================================================================
+-- If checkDesignationsNow doesn't assign workers automatically:
+local link = df.global.world.jobs.list.next
+while link do
+  local j = link.item
+  if j and j.job_type == df.job_type.Dig then
+    local miner = dfhack.units.getCitizens()[1]  -- first citizen
+    dfhack.job.addWorker(j, miner)
+    print("Assigned", miner.name.first_name, "to dig job", j.id)
+    break
+  end
+  link = link.next
+end
 
--- Designate up/down stair
-block.designation[bx][by].dig = 2
-
--- Designate channel
-block.designation[bx][by].dig = 3
-
--- INSTANT DIG: After setting designations, run:
+-- =============================================================================
+-- INSTANT DIG (cheat)
+-- =============================================================================
 -- q.py run "dig-now"
--- This instantly completes all dig designations on the map
-
--- Check tile type
-print(df.tiletype[dfhack.maps.getTileType(x, y, z)])
-
--- Check if tile is hidden
-local hidden = block.designation[bx][by].hidden
-print("Hidden:", hidden)
 
 -- =============================================================================
--- CHANGING EXISTING TILES (when dig designation doesn't work)
+-- LIMITATIONS
 -- =============================================================================
--- Dig designations only work on WALLS, not existing floors!
--- To change an existing floor to stairs, modify the tiletype directly:
-
-local x, y, z = 95, 95, 176
-local block = dfhack.maps.getTileBlock(x, y, z)
-local bx, by = x % 16, y % 16
-
--- Change floor to up-stair
-block.tiletype[bx][by] = df.tiletype.ConstructedStairU
-
--- Change floor to down-stair
-block.tiletype[bx][by] = df.tiletype.ConstructedStairD
-
--- Change floor to up/down-stair
-block.tiletype[bx][by] = df.tiletype.ConstructedStairUD
-
--- Verify the change
-local tt = dfhack.maps.getTileType(x, y, z)
-print("New shape:", df.tiletype.attrs[tt].shape)
+-- - Can only designate WALL tiles for digging, not floors
+-- - CarveUpDownStaircase on existing stairs gives "Inappropriate dig square"
+-- - Direct tiletype modification may be reset by game engine
