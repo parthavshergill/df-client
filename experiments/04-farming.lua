@@ -1,0 +1,11 @@
+-- experiments/04-farming.lua
+-- Status: untested
+-- Patterns for farm plots and planting
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Create farm plot
+-- [ ] Assign plant type per season
+-- [ ] Check soil type requirements
+-- [ ] Fertilization

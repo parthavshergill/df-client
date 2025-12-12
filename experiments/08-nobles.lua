@@ -1,0 +1,11 @@
+-- experiments/08-nobles.lua
+-- Status: untested
+-- Patterns for noble positions
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Assign manager
+-- [ ] Assign bookkeeper
+-- [ ] Assign broker
+-- [ ] Check noble requirements (office, etc.)

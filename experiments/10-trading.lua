@@ -1,0 +1,12 @@
+-- experiments/10-trading.lua
+-- Status: untested
+-- Patterns for trade depot and caravans
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Build trade depot
+-- [ ] Check depot accessibility
+-- [ ] List caravan goods
+-- [ ] Move goods to depot
+-- [ ] Request goods from liaison

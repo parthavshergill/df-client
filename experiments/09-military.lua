@@ -1,0 +1,12 @@
+-- experiments/09-military.lua
+-- Status: untested
+-- Patterns for military management
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Create squad
+-- [ ] Assign dwarf to squad
+-- [ ] Assign equipment
+-- [ ] Set training schedule
+-- [ ] Issue orders (station, kill, patrol)

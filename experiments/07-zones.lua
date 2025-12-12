@@ -1,0 +1,12 @@
+-- experiments/07-zones.lua
+-- Status: untested
+-- Patterns for activity zones
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Create meeting hall
+-- [ ] Create bedroom (assign bed)
+-- [ ] Create hospital
+-- [ ] Create garbage dump
+-- [ ] Create pen/pasture

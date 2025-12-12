@@ -1,0 +1,11 @@
+-- experiments/06-furniture.lua
+-- Status: untested
+-- Patterns for furniture placement
+
+-- =============================================================================
+-- TODO: Explore
+-- =============================================================================
+-- [ ] Place bed
+-- [ ] Place table/chair
+-- [ ] Place door
+-- [ ] Assign furniture to room
