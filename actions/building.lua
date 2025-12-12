@@ -1,6 +1,14 @@
 -- Building placement via Lua
 -- Run via: q.py run "lua <code>"
 
+-- =============================================================================
+-- CRITICAL: Game Engine Integration
+-- =============================================================================
+-- dfhack.buildings.completeBuild(bld)  -- Creates construction job for dwarves
+-- dfhack.job.checkBuildingsNow()       -- Trigger job creation for buildings
+-- bld:setBuildStage(bld:getMaxBuildStage())  -- Set to final stage (for instant)
+
+-- =============================================================================
 -- Workshop types:
 -- 0=Carpenters, 1=Farmers, 2=Masons, 3=Craftsdwarfs, 4=Jewelers
 -- 5=MetalsmithsForge, 6=MagmaForge, 7=Bowyers, 8=Mechanics, 9=Siege
@@ -23,9 +31,11 @@ local bld, err = dfhack.buildings.constructBuilding{
 if bld then
   -- Option 1: Let dwarves build it (creates ConstructBuilding job)
   dfhack.buildings.completeBuild(bld)
+  -- Dwarves will gather materials and build
 
-  -- Option 2: Instant completion (skip dwarf construction)
-  bld.construction_stage = 3
+  -- Option 2: Instant completion (cheat - bypass dwarf labor)
+  bld:setBuildStage(bld:getMaxBuildStage())
+  dfhack.buildings.completeBuild(bld)
 
   print("Built Still workshop, ID:", bld.id)
 else
