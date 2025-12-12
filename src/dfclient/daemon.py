@@ -21,89 +21,10 @@ import socket
 import time
 from typing import Any
 
-from dfclient.client import DFClient, _parse_protobuf, _get_int, _get_string, _get_profession_name
+from dfclient.client import DFClient
 
 
 DAEMON_PORT = 5001
-
-
-def get_threats(raw_units: list[dict]) -> tuple[list[dict], int]:
-    """Extract threat information from raw units."""
-    threats = []
-    dead_hostiles = 0
-
-    for u in raw_units:
-        flags1 = _get_int(u, 8)
-        flags2 = _get_int(u, 9)
-
-        is_dead = bool(flags1 & 0x2)
-        is_active_invader = bool(flags1 & 0x80000)
-        is_hidden_ambusher = bool(flags1 & 0x40000)
-        is_invader_origin = bool(flags2 & 0x1)
-
-        if not (is_active_invader or is_hidden_ambusher or is_invader_origin):
-            continue
-
-        if is_dead:
-            dead_hostiles += 1
-            continue
-
-        prof_data = u.get(16)
-        prof_id = 0
-        if isinstance(prof_data, bytes):
-            pf = _parse_protobuf(prof_data)
-            prof_id = _get_int(pf, 3)
-
-        threats.append({
-            "id": _get_int(u, 1),
-            "profession": _get_profession_name(prof_id),
-            "x": _get_int(u, 2),
-            "y": _get_int(u, 3),
-            "z": _get_int(u, 4),
-        })
-
-    return threats, dead_hostiles
-
-
-def get_notable_citizens(raw_units: list[dict], limit: int = 5) -> list[dict]:
-    """Get notable citizens (military)."""
-    military_profs = {73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
-                      87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
-                      98, 99, 100, 101, 102}
-
-    notable = []
-    for u in raw_units:
-        flags1 = _get_int(u, 8)
-        is_dead = bool(flags1 & 0x2)
-        if is_dead:
-            continue
-
-        civ_data = u.get(6)
-        if not isinstance(civ_data, bytes):
-            continue
-        civ_fields = _parse_protobuf(civ_data)
-        civ_id = _get_int(civ_fields, 1, -1)
-        if civ_id < 0:
-            continue
-
-        name = _get_string(u, 13, "")
-        if not name:
-            continue
-
-        prof_data = u.get(16)
-        prof_id = 0
-        if isinstance(prof_data, bytes):
-            pf = _parse_protobuf(prof_data)
-            prof_id = _get_int(pf, 3)
-
-        if prof_id in military_profs:
-            notable.append({
-                "name": name,
-                "profession": _get_profession_name(prof_id),
-            })
-
-    notable.sort(key=lambda x: x["name"])
-    return notable[:limit]
 
 
 class DFDaemon:
@@ -126,34 +47,69 @@ class DFDaemon:
             return False
 
     def get_snapshot(self) -> dict[str, Any]:
-        """Get full game state in one call."""
+        """Get full game state via Lua queries."""
         if not self.client:
             return {"error": "Not connected to DFHack"}
 
         try:
-            # Get all data with minimal RPC calls
-            summary = self.client.get_summary()
-            view = self.client.get_view_info()
-            raw_units = self.client._get_raw_unit_list()
+            # Single Lua script that outputs all data as key=value pairs
+            lua_code = '''
+local out = {}
+-- Basic info
+out.year = df.global.cur_year
+out.paused = df.global.pause_state and 1 or 0
+out.camera_x = df.global.window_x
+out.camera_y = df.global.window_y
+out.camera_z = df.global.window_z
 
-            threats, dead_hostiles = get_threats(raw_units)
-            notable = get_notable_citizens(raw_units)
+-- Count citizens
+local citizens = 0
+local idle = 0
+for i,u in ipairs(df.global.world.units.active) do
+  if dfhack.units.isCitizen(u) and dfhack.units.isAlive(u) then
+    citizens = citizens + 1
+    if not u.job.current_job then idle = idle + 1 end
+  end
+end
+out.citizens = citizens
+out.idle = idle
+
+-- Count threats
+local threats = 0
+for i,u in ipairs(df.global.world.units.active) do
+  if dfhack.units.isAlive(u) and (u.flags1.marauder or u.flags1.active_invader) then
+    threats = threats + 1
+  end
+end
+out.threats = threats
+
+-- Output as parseable lines
+for k,v in pairs(out) do print(k.."="..tostring(v)) end
+'''
+            result = self.client.run_command(f"lua {lua_code}", timeout=2.0)
+
+            # Parse key=value output
+            data = {}
+            for line in result:
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    # Convert to int if possible
+                    try:
+                        data[key] = int(val)
+                    except ValueError:
+                        data[key] = val
 
             return {
-                "fortress": summary.world_name_english,
-                "save": summary.save_name,
-                "citizens": summary.citizen_count,
-                "idle": summary.idle_count,
-                "paused": summary.is_paused,
+                "year": data.get("year", 0),
+                "citizens": data.get("citizens", 0),
+                "idle": data.get("idle", 0),
+                "paused": data.get("paused", 0) == 1,
                 "camera": {
-                    "x": view.view_x,
-                    "y": view.view_y,
-                    "z": view.view_z,
+                    "x": data.get("camera_x", 0),
+                    "y": data.get("camera_y", 0),
+                    "z": data.get("camera_z", 0),
                 },
-                "threats": threats,
-                "threat_count": len(threats),
-                "dead_hostiles": dead_hostiles,
-                "notable": notable,
+                "threats": data.get("threats", 0),
             }
         except Exception as e:
             return {"error": str(e)}
@@ -203,13 +159,10 @@ class DFDaemon:
             elif after["citizens"] > before["citizens"]:
                 changes.append(f"Gained {after['citizens'] - before['citizens']} citizen(s)")
 
-            if after["threat_count"] < before["threat_count"]:
-                changes.append(f"Killed {before['threat_count'] - after['threat_count']} invader(s)")
-            elif after["threat_count"] > before["threat_count"]:
-                changes.append(f"New threats: +{after['threat_count'] - before['threat_count']}")
-
-            if after["dead_hostiles"] > before["dead_hostiles"]:
-                changes.append(f"{after['dead_hostiles'] - before['dead_hostiles']} hostile(s) killed")
+            if after["threats"] < before["threats"]:
+                changes.append(f"Killed {before['threats'] - after['threats']} threat(s)")
+            elif after["threats"] > before["threats"]:
+                changes.append(f"New threats: +{after['threats'] - before['threats']}")
 
             return {
                 "seconds": seconds,
