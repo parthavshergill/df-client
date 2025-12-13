@@ -24,7 +24,8 @@ dfhack.job.addWorker(job, unit)     -- Forces unit to work on job
 local x, y, z = 95, 93, 175
 local block = dfhack.maps.getTileBlock(x, y, z)
 local bx, by = x % 16, y % 16
-block.designation[bx][by].dig = 1  -- 1=mine, 2=UD-stair, 3=channel, 5=D-stair
+-- Use enums, not raw integers:
+block.designation[bx][by].dig = df.tile_dig_designation.Default  -- mine wall
 block.flags.designated = true
 dfhack.job.checkDesignationsNow()  -- CRITICAL: triggers job creation
 ```
@@ -34,20 +35,22 @@ dfhack.job.checkDesignationsNow()  -- CRITICAL: triggers job creation
 -- Find workshop
 local ws = df.building.find(4)  -- by ID
 
--- Create job with item requirements
-local job = df.job:new()
-job.job_type = df.job_type.MakeBarrel  -- or use integer 125
+-- Create job using createLinked (NOT df.job:new() + linkIntoWorld)
+local job = dfhack.job.createLinked()  -- creates AND links in one step
+job.job_type = df.job_type.MakeBarrel
+job.mat_type = -1
 
 -- Add material filter (REQUIRED for most jobs)
 local jitem = df.job_item:new()
-jitem.item_type = df.item_type.WOOD
+jitem.item_type = df.item_type.NONE
+jitem.mat_type = -1
+jitem.mat_index = -1
 jitem.quantity = 1
 jitem.vector_id = df.job_item_vector_id.WOOD
 job.job_items.elements:insert('#', jitem)
 
-dfhack.job.linkIntoWorld(job)
 dfhack.job.assignToWorkshop(job, ws)
--- Dwarf with correct labor will pick it up automatically
+dfhack.job.addWorker(job, dfhack.units.getCitizens()[1])  -- optional
 ```
 
 ### Build Workshop/Building (dwarves complete)
@@ -76,18 +79,20 @@ for _, u in ipairs(dfhack.units.getCitizens()) do
 end
 ```
 
-## Job API Functions
+## Job API Functions (Safe Level 2 Methods)
 
 | Function | Purpose |
 |----------|---------|
-| `dfhack.job.linkIntoWorld(job)` | Add job to world job list |
-| `dfhack.job.assignToWorkshop(job, ws)` | Link job to workshop |
-| `dfhack.job.addWorker(job, unit)` | Assign worker to job |
-| `dfhack.job.removeJob(job)` | Cancel job |
-| `dfhack.job.getHolder(job)` | Get building holding job |
-| `dfhack.job.getWorker(job)` | Get unit performing job |
-| `dfhack.job.checkDesignationsNow()` | Create jobs from designations |
+| `dfhack.job.createLinked()` | **Create job AND link to world** (use instead of df.job:new()) |
+| `dfhack.job.assignToWorkshop(job, ws)` | Bidirectional link job to workshop |
+| `dfhack.job.addWorker(job, unit)` | Assign worker + cleanup posting |
+| `dfhack.job.removeJob(job)` | Clean job cancellation |
+| `dfhack.job.getHolder(job)` | Get building holding job (read-only) |
+| `dfhack.job.getWorker(job)` | Get unit performing job (read-only) |
+| `dfhack.job.checkDesignationsNow()` | **CRITICAL:** Create jobs from designations |
 | `dfhack.job.checkBuildingsNow()` | Create jobs for buildings |
+
+**AVOID:** `df.job:new()` + `dfhack.job.linkIntoWorld()` - use `createLinked()` instead
 
 ## Workshop Types (df.workshop_type)
 
@@ -112,15 +117,15 @@ end
 | 125 | MakeBarrel |
 | 126 | MakeBucket |
 
-## Dig Designation Values
+## Dig Designation Enums (df.tile_dig_designation)
 
-| Value | Result |
-|-------|--------|
-| 1 | Mine → Floor |
-| 2 | UD-Stair |
-| 3 | Channel |
-| 5 | D-Stair |
-| 6 | U-Stair |
+| Enum | Value | Result |
+|------|-------|--------|
+| Default | 1 | Mine → Floor |
+| UpDownStair | 2 | UD-Stair |
+| Channel | 3 | Channel |
+| DownStair | 5 | D-Stair |
+| UpStair | 6 | U-Stair |
 
 ## Labor Types (df.unit_labor)
 

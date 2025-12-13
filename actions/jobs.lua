@@ -11,23 +11,27 @@ dfhack.job.checkBuildingsNow()     -- Create jobs for building construction
 dfhack.job.addWorker(job, unit)    -- Manually assign worker to specific job
 
 -- =============================================================================
--- ADD WORKSHOP JOB (with proper material filter)
+-- ADD WORKSHOP JOB (PROPER PATTERN using createLinked)
 -- =============================================================================
+-- Use dfhack.job.createLinked() instead of df.job:new() + linkIntoWorld()
+-- This properly integrates with game engine
+
 local ws = df.building.find(4)  -- carpenter workshop ID
-local job = df.job:new()
-job.job_type = df.job_type.MakeBarrel  -- or integer 125
+local job = dfhack.job.createLinked()  -- ✓ CORRECT: creates AND links in one step
+job.job_type = df.job_type.MakeBarrel
+job.mat_type = -1
 
 -- Material filter (REQUIRED for most workshop jobs)
 local jitem = df.job_item:new()
-jitem.item_type = df.item_type.WOOD
+jitem.item_type = df.item_type.NONE  -- game leaves uninitialized
 jitem.mat_type = -1
 jitem.mat_index = -1
 jitem.quantity = 1
 jitem.vector_id = df.job_item_vector_id.WOOD
 job.job_items.elements:insert('#', jitem)
 
-dfhack.job.linkIntoWorld(job)
-dfhack.job.assignToWorkshop(job, ws)
+dfhack.job.assignToWorkshop(job, ws)  -- bidirectional link
+dfhack.job.addWorker(job, dfhack.units.getCitizens()[1])  -- optional: assign worker
 print("Added job to workshop", ws.id)
 
 -- =============================================================================

@@ -13,7 +13,8 @@ local block = dfhack.maps.getTileBlock(x, y, z)
 local bx, by = x % 16, y % 16
 
 -- Set designation (only works on WALL tiles, not floors!)
-block.designation[bx][by].dig = 1  -- 1=mine, 2=UD-stair, 3=channel, 5=D-stair
+-- Use proper enums instead of raw integers:
+block.designation[bx][by].dig = df.tile_dig_designation.Default  -- mine wall
 block.flags.designated = true
 
 -- CRITICAL: Trigger game engine to create jobs
@@ -31,21 +32,22 @@ for x = x1, x2 do
   for y = y1, y2 do
     local block = dfhack.maps.getTileBlock(x, y, z)
     local bx, by = x % 16, y % 16
-    block.designation[bx][by].dig = 1
+    block.designation[bx][by].dig = df.tile_dig_designation.Default
     block.flags.designated = true
   end
 end
 dfhack.job.checkDesignationsNow()  -- Create all jobs at once
 
 -- =============================================================================
--- DIG DESIGNATION VALUES
+-- DIG DESIGNATION ENUMS (df.tile_dig_designation)
 -- =============================================================================
--- 0 = Clear designation
--- 1 = Mine (wall → floor)
--- 2 = UD-Stair (wall → StairUD)
--- 3 = Channel (floor → hole + ramp below)
--- 5 = D-Stair (wall → StairD)
--- 6 = U-Stair (existing floor → StairU)
+-- No               = 0 (Clear designation)
+-- Default          = 1 (Mine: wall → floor)
+-- UpDownStair      = 2 (wall → StairUD)
+-- Channel          = 3 (floor → hole + ramp below)
+-- Ramp             = 4 (wall → ramp)
+-- DownStair        = 5 (wall → StairD)
+-- UpStair          = 6 (existing floor → StairU)
 
 -- =============================================================================
 -- MANUALLY ASSIGN WORKER TO DIG JOB
