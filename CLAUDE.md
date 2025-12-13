@@ -2,47 +2,82 @@
 
 You are playing Dwarf Fortress as narrator/DM. Designate work for dwarves; they act autonomously.
 
-## Orchestration Loop
+## Core Philosophy
 
-1. **Snapshot** — `q.py snapshot` to see state
-2. **Analyze** — What do dwarves need? What work should be done?
-3. **Designate** — Dig, build, add jobs, enable labors
-4. **Tick** — `q.py tick N` to let dwarves act
-5. **Repeat**
+**You can only designate tasks.** Dwarves decide when to eat, drink, sleep, and which jobs to take based on their needs, skills, and available tools. Don't micromanage - set up the work and let them live.
 
 ## Commands
 
 ```bash
 uv run python scripts/q.py daemon              # Start first
-uv run python scripts/q.py snapshot [radius]   # Camera-centered view
-uv run python scripts/q.py tick N              # Advance N ticks
-uv run python scripts/q.py dig x1 y1 z x2 y2 [type]   # Designate dig
-uv run python scripts/q.py build <type> x y z         # Build workshop
-uv run python scripts/q.py run "lua ..."              # Raw Lua
+uv run python scripts/q.py snapshot [radius]   # Camera-centered view (default 100)
+uv run python scripts/q.py tick N              # Advance N game ticks
+uv run python scripts/q.py dig-now             # Instant dig (cheat for setup)
+uv run python scripts/q.py run "lua ..."       # Raw Lua for anything else
 ```
 
-## Key Concept
+## Level 2 DFHack APIs (Use These!)
 
-**You cannot directly control dwarves.** You designate work; they decide what to do based on labors, tools, and needs.
+Direct memory manipulation bypasses game logic. Use helper functions:
 
-## Triggering Game Engine (Critical!)
-
-Direct data modification does NOT trigger game logic. After setting designations:
 ```lua
-dfhack.job.checkDesignationsNow()  -- Creates jobs from designations, assigns workers
-dfhack.job.checkBuildingsNow()     -- Creates jobs for buildings
-dfhack.job.addWorker(job, unit)    -- Manually assign worker to job
+-- After designations (dig, chop, etc.)
+dfhack.job.checkDesignationsNow()   -- Creates jobs AND assigns workers
+
+-- Workshop jobs (use createLinked, NOT df.job:new())
+local job = dfhack.job.createLinked()
+job.job_type = 125  -- MakeBarrel
+dfhack.job.assignToWorkshop(job, workshop)
+
+-- Buildings
+dfhack.buildings.constructBuilding{type=..., pos=...}
+dfhack.job.checkBuildingsNow()
 ```
 
-## Dwarf Needs
+## Common Patterns
 
-Dwarves don't auto-eat/drink in this setup. Use these workarounds:
-- `run "full-heal -all"` — Reset all hunger/thirst/sleep to 0
-- Or assign Eat jobs manually (see `experiments/11-orchestration.lua`)
+### Designate Digging
+```lua
+local block = dfhack.maps.getTileBlock(x, y, z)
+block.designation[x%16][y%16].dig = df.tile_dig_designation.Default
+block.flags.designated = true
+dfhack.job.checkDesignationsNow()
+```
+
+### Add Workshop Job
+```lua
+local ws = df.building.find(ID)
+local job = dfhack.job.createLinked()
+job.job_type = 125  -- MakeBarrel=125, BrewDrink=113, ConstructBed=69
+job.mat_type = -1
+local jitem = df.job_item:new()
+jitem.item_type = -1
+jitem.mat_type = -1
+jitem.mat_index = -1
+jitem.quantity = 1
+jitem.vector_id = df.job_item_vector_id.WOOD
+job.job_items.elements:insert('#', jitem)
+dfhack.job.assignToWorkshop(job, ws)
+```
+
+### Enable Labors
+```lua
+for _,u in ipairs(dfhack.units.getCitizens()) do
+  u.status.labors[df.unit_labor.MINE] = true
+  u.status.labors[df.unit_labor.PLANT] = true
+  u.status.labors[df.unit_labor.BREWER] = true
+  u.status.labors[df.unit_labor.CUTWOOD] = true
+end
+```
+
+## Time
+
+- `tick 100-500` for quick checks
+- `tick 1000-5000` for meaningful progress
+- ~1200 ticks = 1 day
 
 ## References
 
-- `API.md` — Lua patterns, job types, building types
-- `experiments/` — Tested patterns (see README for status)
+- `API.md` — Full technical reference
 - `GUIDE.md` — Gameplay strategies
-- `JOURNAL.md` — Session log
+- `actions/` — Reusable Lua patterns
